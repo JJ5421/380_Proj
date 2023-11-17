@@ -1,22 +1,31 @@
-import cv2 as cv
+import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import keyboard
 
 def main():
 	
-    try:
-        while True:
-            
-            print("yomamaphone")
+    cap = cv2.VideoCapture("/dev/video0")
 
-            
-            if keyboard.is_pressed('esc'):
-                print("Exiting loop.")
-                break
+    if not cap.isOpened():
+        print("Error: Couldn't open the camera.")
+        return
 
-    except KeyboardInterrupt:
-        pass
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            print("Error: Couldn't read frame.")
+            break
+
+        cv2.imshow("Video", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
 
 def readim():
 
@@ -58,4 +67,5 @@ def canny():
 
     pass
 
-main()
+if __name__ == "__main__":
+    main()
