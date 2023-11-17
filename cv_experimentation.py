@@ -2,9 +2,6 @@ import cv2
 
 import urllib.request
 
-# Download a pre-trained Haar Cascade XML file for face detection
-url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
-urllib.request.urlretrieve(url, 'cascade.xml')
 
 
 def view_webcam():
@@ -12,7 +9,8 @@ def view_webcam():
     cap = cv2.VideoCapture(0)
 
     # Load the pre-trained face cascade classifier
-    face_cascade = cv2.CascadeClassifier('cascade.xml')
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
 
     while True:
         # Read frames from the webcam
