@@ -13,10 +13,12 @@ import os
 c1 = 1/(160*160) # Size movement multiplier
 c2 = 1/300 # Distance movemment multiplier
 c3 = 100 # Minimum distance threshold
-c4 = 20 # Converts 0-1 |----> servo degree change
+c4 = 3 # Converts 0-1 |----> servo degree change
 
 # Servo positions for global storage
+global s_az
 s_az = 50
+global s_el
 s_el = 20
 # Servo max position
 s_max = 270
@@ -76,7 +78,7 @@ def run_cascade(cascade, im):
     # Obtain grayscale
     im = grayscale(im)
     # Perform face detection
-    objects = cascade.detectMultiScale(im, scaleFactor=1.1, minNeighbors=15, minSize=(30, 30))
+    objects = cascade.detectMultiScale(im, scaleFactor=1.1, minNeighbors=30, minSize=(30, 30))
 
     return objects
 
@@ -132,6 +134,7 @@ def calc_adj(obj):
     
     # Distance (pixels)
     dist = dist_2(center, screen_center)
+    print(dist)
     # Direction (angle)
     angle = math.atan2(center[1] - screen_center[1], center[0] - screen_center[0]) #- (3.1415926535/2)
     # Size (calculated as area)
@@ -173,7 +176,9 @@ def calc_servo_adj(xval, yval):
 # This pushes the position adjustments to the servos (actually moves them to track detected objects)
 def pos_adjust(az, el):
     # Change the stored global servo values
+    global s_az 
     s_az = az
+    global s_el 
     s_el = el
 
     # Update the servo positions
@@ -185,7 +190,7 @@ def pos_adjust(az, el):
 
 def set_servo_angle(pin, angle):
     # Map angle to the MG996R range
-    angle = max(0, min(180, angle))
+    angle = max(0, min(270, angle))
     duty_cycle = (angle / 180.0) * 2000 + 500
     pi.set_servo_pulsewidth(pin, duty_cycle)
 
