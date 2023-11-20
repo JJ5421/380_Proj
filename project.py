@@ -10,16 +10,20 @@ import subprocess
 import os
 
 # Coefficients list
-c1 = 1/(160*160) # Size movement multiplier
-c2 = 1/300 # Distance movemment multiplier
-c3 = 100 # Minimum distance threshold
-c4 = 3 # Converts 0-1 |----> servo degree change
+
+c1 = 1/300 # Distance linear adjustment multiplier
+c2 = 1.035 # Distance axponential adjustment multiplier
+
+c3 = 25000 # Size movement multiplier
+
+c4 = 70 # Minimum distance threshold
+c5 = 5.5 # Converts 0-1 |----> servo degree change
 
 # Servo positions for global storage
 global s_az
-s_az = 50
+s_az = 90.00
 global s_el
-s_el = 20
+s_el = 35.00
 # Servo max position
 s_max = 270
 # Servo GPIO pins
@@ -56,7 +60,6 @@ camera_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 # Calculate the center coordinates
 center_x = camera_width // 2
 center_y = camera_height // 2
-print(center_x,center_y)
 # Screen center tuple
 screen_center = (center_x,center_y)
 
@@ -134,17 +137,16 @@ def calc_adj(obj):
     
     # Distance (pixels)
     dist = dist_2(center, screen_center)
-    print(dist)
     # Direction (angle)
-    angle = math.atan2(center[1] - screen_center[1], center[0] - screen_center[0]) #- (3.1415926535/2)
+    angle = math.atan2(center[1] - screen_center[1], center[0] - screen_center[0])
     # Size (calculated as area)
     size = obj[2]*obj[3]*c1
 
     # Outside bounding circle, so we need to calculate movement
     # Coefficients should be tuned to make this on the scale of (-1,1)
-    if dist > c3:
-        xc = -(math.cos(angle))*(dist*c2)#*(size*c1)
-        yc = -(math.sin(angle))*(dist*c2)#*(size*c1)
+    if dist > c4:
+        xc = -(math.cos(angle))*(pow(dist,c2)*c1)#*(size/c3)
+        yc = -(math.sin(angle))*(pow(dist,c2)*c1)#*(size/c3)
         return xc,yc, True
     # Within central bounding circle, so we choose not to move
     else:
@@ -153,8 +155,8 @@ def calc_adj(obj):
 # This calculates the real necessary position adjustment to sevo positions necessary
 def calc_servo_adj(xval, yval):
     # Convery adjustments to actionable servo PWM values
-    az_adj = xval*c4
-    el_adj = yval*c4
+    az_adj = xval*c5
+    el_adj = yval*c5
     # Calculate new azimuth and elevation servo values using the adjustments
     new_az = s_az + az_adj
     new_el = s_el + el_adj
@@ -185,15 +187,14 @@ def pos_adjust(az, el):
     set_servo_angle(s_p_az,s_az)
     set_servo_angle(s_p_el,s_el)
 
-    # Give servo a chance to move
-    time.sleep(0.01)
-
+# This turns the servo to a given angle input
 def set_servo_angle(pin, angle):
     # Map angle to the MG996R range
     angle = max(0, min(270, angle))
-    duty_cycle = (angle / 180.0) * 2000 + 500
+    duty_cycle = (angle / 270.0) * 2000 + 500
     pi.set_servo_pulsewidth(pin, duty_cycle)
 
+# This turns servos off at the endof the code, or when needed
 def turn_off_servo(pin):
     pi.set_servo_pulsewidth(pin, 0)
 
@@ -230,11 +231,13 @@ def canny(frame):
 
     return canny_edges
 
+# Initializes the servos to a position upon startup
 def initial_pos():
     # Initial Position
     set_servo_angle(s_p_az, s_az)
     set_servo_angle(s_p_el, s_el)
 
+# Continuously run tracking protocol (string of the above functions)
 def tracking(frame):
 
     obs = run_cascade(facecascade, frame)
@@ -244,23 +247,21 @@ def tracking(frame):
     for obj in obs:
         centers.append(find_center(obj))
 
+    '''
     for (x, y, w, h) in obs:
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
     # Display the captured frame with bounding boxes
     cv2.imshow("Video", frame)
+    '''
 
     try:
         t_index = find_closest(centers)
         target = obs[t_index]
-
-        adjx,adjy, ind = calc_adj(target)
-
+        adjx,adjy,ind = calc_adj(target)
         if ind:
             s_adjx, s_adjy = calc_servo_adj(adjx, adjy)
-
             pos_adjust(s_adjx, s_adjy)
-
     except:
         return
 
