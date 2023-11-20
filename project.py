@@ -4,36 +4,44 @@ import matplotlib.pyplot as plt
 import keyboard
 import math
 import RPi.GPIO as GPIO
+import time
+import pigpio
+import subprocess
+import os
 
 # Coefficients list
-c1 = 1/(1920*1080) # Size movement multiplier
-c2 = 1/1000 # Distance movemment multiplier
-c3 = 200 # Minimum distance threshold
-c4 = 1 # Converts 0-1 |----> servo degree change
+c1 = 1/(160*160) # Size movement multiplier
+c2 = 1/300 # Distance movemment multiplier
+c3 = 100 # Minimum distance threshold
+c4 = 20 # Converts 0-1 |----> servo degree change
 
 # Servo positions for global storage
 s_az = 50
-s_el = 50
+s_el = 20
 # Servo max position
 s_max = 270
 # Servo GPIO pins
-s_p_az = 13
-s_p_el = 19
+s_p_az = 19
+s_p_el = 13
 
-#### EDIT #####
-# Initiate GPIO
-GPIO.setmode(GPIO.BCM) # Broadcom SOC numbers
-pwm_az = GPIO.PWM(s_p_az, 50)
-pwm_el = GPIO.PWM(s_p_el, 50)
-# Set output pins
-GPIO.output(s_p_az, True)
-GPIO.output(s_p_el, True)
-# Initial position
-pwm_az.ChangeDutyCycle(30)
-pwm_el.ChangeDutyCycle(30)
+#### SERVO CODE USING HARDWARE PWM CAPABILITIES ######
+os.system('sudo pigpiod')
+# Initialize pigpio
+pi = pigpio.pi()
+# Check if pigpio connection is successful
+if not pi.connected:
+    print("Error: Couldn't connect to pigpio.")
+    exit()
+# Set GPIO pins as output
+pi.set_mode(s_p_az, pigpio.OUTPUT)
+pi.set_mode(s_p_el, pigpio.OUTPUT)
+# Set servo PWM frequency (Hz)
+pwm_frequency = 50
+pi.set_PWM_frequency(s_p_az, pwm_frequency)
+pi.set_PWM_frequency(s_p_el, pwm_frequency)
 
 # Using built-in face cascade for now
-cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+facecascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 # Must define viable camera (troubleshoot video0-4 if not working)
 cap = cv2.VideoCapture("/dev/video0")
 # Stops code in the case of failure
@@ -46,6 +54,7 @@ camera_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 # Calculate the center coordinates
 center_x = camera_width // 2
 center_y = camera_height // 2
+print(center_x,center_y)
 # Screen center tuple
 screen_center = (center_x,center_y)
 
@@ -67,7 +76,7 @@ def run_cascade(cascade, im):
     # Obtain grayscale
     im = grayscale(im)
     # Perform face detection
-    objects = cascade.detectMultiScale(im, scaleFactor=1.1, minNeighbors=10, minSize=(30, 30))
+    objects = cascade.detectMultiScale(im, scaleFactor=1.1, minNeighbors=15, minSize=(30, 30))
 
     return objects
 
@@ -90,6 +99,8 @@ def find_closest(centers):
         if dist <= d_small:
             d_small = dist
             small_index = i
+        
+        i = i + 1
 
     return small_index
 
@@ -108,11 +119,10 @@ def find_center(object_vals):
     width = object_vals[2]
     height = object_vals[3]
     # Calculate center point of object
-    midx = x_tl - (width/2)
-    midy = y_tl - (height/2)
+    midx = int(x_tl + (width/2))
+    midy = int(y_tl + (height/2))
     # Store center tuple
     center = (midx,midy)
-    
     return center
 
 # Calculates the magnitude and direction of adjustment necessary
@@ -123,19 +133,19 @@ def calc_adj(obj):
     # Distance (pixels)
     dist = dist_2(center, screen_center)
     # Direction (angle)
-    angle = math.arctan2((obj[0]-center_x, obj[1]-center_y))
+    angle = math.atan2(center[1] - screen_center[1], center[0] - screen_center[0]) #- (3.1415926535/2)
     # Size (calculated as area)
-    size = obj[2]*obj*[3]*c1
+    size = obj[2]*obj[3]*c1
 
     # Outside bounding circle, so we need to calculate movement
     # Coefficients should be tuned to make this on the scale of (-1,1)
-    if dist > c2:
-        xc = math.cos(angle)*(dist*c2)*(size*c1)
-        yc = math.sin(angle)*(dist*c2)*(size*c1)
-        return (xc,yc)
+    if dist > c3:
+        xc = -(math.cos(angle))*(dist*c2)#*(size*c1)
+        yc = -(math.sin(angle))*(dist*c2)#*(size*c1)
+        return xc,yc, True
     # Within central bounding circle, so we choose not to move
     else:
-        return (0,0)
+        return 0,0, False
 
 # This calculates the real necessary position adjustment to sevo positions necessary
 def calc_servo_adj(xval, yval):
@@ -158,7 +168,7 @@ def calc_servo_adj(xval, yval):
         new_el = 0
 
     # Return new servo positions
-    return(new_az, new_el)
+    return new_az, new_el
 
 # This pushes the position adjustments to the servos (actually moves them to track detected objects)
 def pos_adjust(az, el):
@@ -167,8 +177,20 @@ def pos_adjust(az, el):
     s_el = el
 
     # Update the servo positions
-    GPIO.pinwrite(s_p_az, s_az)
-    GPIO.pinwrite(s_p_el, s_el)
+    set_servo_angle(s_p_az,s_az)
+    set_servo_angle(s_p_el,s_el)
+
+    # Give servo a chance to move
+    time.sleep(0.01)
+
+def set_servo_angle(pin, angle):
+    # Map angle to the MG996R range
+    angle = max(0, min(180, angle))
+    duty_cycle = (angle / 180.0) * 2000 + 500
+    pi.set_servo_pulsewidth(pin, duty_cycle)
+
+def turn_off_servo(pin):
+    pi.set_servo_pulsewidth(pin, 0)
 
 # Camera traces out available positions - this behavior breaks when an object is spotted
 def sweep():
@@ -203,21 +225,65 @@ def canny(frame):
 
     return canny_edges
 
-# Sets a servo angle
-def set_angle(angle):
+def initial_pos():
+    # Initial Position
+    set_servo_angle(s_p_az, s_az)
+    set_servo_angle(s_p_el, s_el)
 
-    pass
+def tracking(frame):
+
+    obs = run_cascade(facecascade, frame)
+
+    centers = []
+
+    for obj in obs:
+        centers.append(find_center(obj))
+
+    for (x, y, w, h) in obs:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+    # Display the captured frame with bounding boxes
+    cv2.imshow("Video", frame)
+
+    try:
+        t_index = find_closest(centers)
+        target = obs[t_index]
+
+        adjx,adjy, ind = calc_adj(target)
+
+        if ind:
+            s_adjx, s_adjy = calc_servo_adj(adjx, adjy)
+
+            pos_adjust(s_adjx, s_adjy)
+
+    except:
+        return
+
 
 # Main function - we run this
 def main():
 
-    while True:
-        frame = readim(cap)
-        cv2.imshow("Video", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            cap.release()
-            cv2.destroyAllWindows()
+    initial_pos()
+    time.sleep(1)
+
+    try:
+        
+        while True:
+            frame = readim(cap)
+            tracking(frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                cap.release()
+                cv2.destroyAllWindows()
+        
+
+    finally:
+       # Make sure to stop pigpiod when your script is done
+       turn_off_servo(s_p_az)
+       turn_off_servo(s_p_el)
+       #subprocess.run(['sudo', 'killall', 'pigpiod'])
+
 
 # Runs main function
 if __name__ == "__main__":
     main()
+    
