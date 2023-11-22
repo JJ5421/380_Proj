@@ -12,12 +12,12 @@ import os
 # Coefficients list
 
 c1 = 1/300 # Distance linear adjustment multiplier
-c2 = 1.035 # Distance axponential adjustment multiplier
-
+c2 = 1.125 # Distance axponential adjustment multiplier
+cmid = 50
 c3 = 25000 # Size movement multiplier
 
-c4 = 70 # Minimum distance threshold
-c5 = 5.5 # Converts 0-1 |----> servo degree change
+c4 = 60 # Minimum distance threshold
+c5 = 5.25 # Converts 0-1 |----> servo degree change
 
 # Servo positions for global storage
 global s_az
@@ -145,8 +145,8 @@ def calc_adj(obj):
     # Outside bounding circle, so we need to calculate movement
     # Coefficients should be tuned to make this on the scale of (-1,1)
     if dist > c4:
-        xc = -(math.cos(angle))*(pow(dist,c2)*c1)#*(size/c3)
-        yc = -(math.sin(angle))*(pow(dist,c2)*c1)#*(size/c3)
+        xc = -(math.cos(angle))*(pow(dist-cmid,c2)*c1)#*(size/c3)
+        yc = -(math.sin(angle))*(pow(dist-cmid,c2)*c1)#*(size/c3)
         return xc,yc, True
     # Within central bounding circle, so we choose not to move
     else:
