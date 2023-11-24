@@ -196,7 +196,50 @@ def turn_off_servos():
 # Camera traces out available positions - this behavior breaks when an object is spotted
 def sweep():
 
-    pass
+    # Bring in global servo position variables
+    global s_az 
+    global s_el 
+
+    # Sweep bounds
+    left_bound = 10
+    right_bound = 250
+    bot_bound = 10
+    top_bound = 80
+
+    # Set sweep direction (Left vs. Right)
+    direc = 1
+
+    while True:
+        sweep_frame = readim(cap)
+
+        objects = run_cascade(facecascade, sweep_frame)
+
+        # Return frame with an object if we find one - this will be used for new tracking efforts!
+        if objects:
+            return sweep_frame
+
+        # We are at or above our top bound and swept all the way to one side (then we go back to the bottom left position to start all over)
+        if (s_az >= right_bound or s_az <= left_bound) and (s_el >= top_bound):
+            pos_adjust(left_bound, bot_bound)
+
+        # We have only transgressed a side-ways bound (then we move up 5 degrees and start stepping over the other way)
+        elif (s_az >= right_bound) or (s_az <= left_bound):
+            direc *= -1
+            new_az = s_az + (5*direc)
+            new_el = s_el + 5
+            pos_adjust(new_az, new_el)
+
+        # Otherwise, we step in the direction necessary, making no upward movement
+        else:
+            new_az = s_az + (5*direc)
+            pos_adjust(new_az, s_el)
+
+        # Wait a portion of a second to allow the servo to move, and to snap a nice picture with no movement in the next loop iteration.
+        time.sleep(0.5)
+        
+
+
+    return sweep_frame
 
 # Converts a frame to grayscale
 def grayscale(frame):
@@ -237,17 +280,23 @@ def tracking(frame):
 
     obs = run_cascade(facecascade, frame)
 
+    if not obs:
+        frame = sweep()
+
     centers = []
 
+    
+    # Locate all object centers
     for obj in obs:
         centers.append(find_center(obj))
-
     
+    '''
+    # Display all objects overlaid with targetting square
     for (x, y, w, h) in obs:
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
     # Display the captured frame with bounding boxes
     cv2.imshow("Video", frame)
-    
+    '''
 
     try:
         t_index = find_closest(centers)
@@ -279,8 +328,6 @@ def main():
     finally:
        # Make sure to stop pigpiod when your script is done
        turn_off_servos()
-
-       #subprocess.run(['sudo', 'killall', 'pigpiod'])
 
 
 # Runs main function
